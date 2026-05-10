@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-width=1.0">
+  <title>Nvim Slide Builder</title>
+  <style>
+    body {
+      font-family: 'Courier New', Consolas, monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    h3 {
+      font-size: 14px;
+      margin-top: 0;
+      color: #9cdcfe;
+      border-bottom: 1px solid #333;
+      padding-bottom: 10px;
+    }
+    .sidebar {
+      width: 200px;
+      background: #252526;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #333;
+    }
+    .editor {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 15px;
+    }
+    .preview-output {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 15px;
+      background: #1e1e1e;
+      border-left: 1px solid #333;
+    }
+    textarea {
+      flex: 1;
+      background: #1e1e1e;
+      color: #ce9178;
+      border: 1px solid #333;
+      font-family: 'Courier New', Consolas, monospace;
+      font-size: 16px;
+      padding: 10px;
+      resize: none;
+      white-space: pre;
+      overflow: auto;
+      outline: none;
+    }
+    textarea:focus {
+      border-color: #0e639c;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      cursor: pointer;
+      margin-bottom: 8px;
+      border-radius: 3px;
+      font-family: monospace;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #1177bb;
+    }
+    .delete-btn {
+      background: #a1260d;
+      margin-top: auto;
+    }
+    .delete-btn:hover {
+      background: #c53112;
+    }
+    .slide-btn {
+      background: transparent;
+      color: #cccccc;
+      text-align: left;
+      border: 1px solid transparent;
+    }
+    .slide-btn:hover {
+      background: #2a2d2e;
+    }
+    .slide-btn.active {
+      background: #37373d;
+      border: 1px solid #0e639c;
+      color: white;
+    }
+    #slide-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 15px;
+    }
+    pre {
+      background: #1e1e1e;
+      color: #9cdcfe;
+      overflow: auto;
+      flex: 1;
+      margin: 0;
+      font-size: 12px;
+    }
+    .header-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .header-controls h3 { margin: 0; border: none; padding: 0; }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar">
+    <h3>Slides</h3>
+    <div id="slide-list"></div>
+    <button onclick="addSlide()">+ Add Slide</button>
+  </div>
+
+  <div class="editor">
+    <div class="header-controls">
+      <h3>Editor (Slide <span id="current-slide-num">1</span>)</h3>
+      <button class="delete-btn" onclick="deleteSlide()">🗑 Delete Slide</button>
+    </div>
+    <textarea id="editor-textarea" oninput="updateSlide()" spellcheck="false" placeholder="ここにテキストやアスキーアートを入力してください..."></textarea>
+  </div>
+
+  <div class="preview-output">
+    <div class="header-controls">
+      <h3>Generated Plugin (.lua)</h3>
+      <button onclick="downloadLua()" style="background: #238636;">Download plugin.lua</button>
+    </div>
+    <pre id="code-output"></pre>
+  </div>
+
+  <script>
+    let slides = [
+      "    =============================================================\n                        TITLE\n    =============================================================\n\n      Hello, Neovim Presenter!\n\n\n                           [Press 'n' to Next ->]"
+    ];
+    let currentIndex = 0;
+
+    function renderList() {
+      const list = document.getElementById('slide-list');
+      list.innerHTML = '';
+      slides.forEach((_, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'slide-btn' + (i === currentIndex ? ' active' : '');
+        btn.innerText = 'Slide ' + (i + 1);
+        btn.onclick = () => selectSlide(i);
+        list.appendChild(btn);
+      });
+      updateOutput();
+    }
+
+    function selectSlide(index) {
+      if (index < 0 || index >= slides.length) return;
+      currentIndex = index;
+      document.getElementById('current-slide-num').innerText = index + 1;
+      document.getElementById('editor-textarea').value = slides[index];
+      renderList();
+    }
+
+    function addSlide() {
+      slides.push("\n    [New Slide]\n");
+      selectSlide(slides.length - 1);
+    }
+
+    function deleteSlide() {
+      if (slides.length <= 1) {
+        alert("最低1つのスライドが必要です！");
+        return;
+      }
+      slides.splice(currentIndex, 1);
+      const newIndex = currentIndex >= slides.length ? slides.length - 1 : currentIndex;
+      selectSlide(newIndex);
+    }
+
+    function updateSlide() {
+      slides[currentIndex] = document.getElementById('editor-textarea').value;
+      updateOutput();
+    }
+
+    function generateLua() {
+      let lua = `-- =========================================================================\n`;
+      lua += `-- Presentation Plugin for Neovim\n`;
+      lua += `-- Generated by Nvim Slide Builder\n`;
+      lua += `-- =========================================================================\n\n`;
+      lua += `local api = vim.api\n\n`;
+      lua += `local slides = {\n`;
+      
+      slides.forEach((slide, index) => {
+        lua += `  {\n`;
+        const lines = slide.split('\n');
+        lines.forEach((line, lineIndex) => {
+          const escapedLine = line.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+          lua += `    "${escapedLine}"${lineIndex === lines.length - 1 ? '' : ','}\n`;
+        });
+        lua += `  }${index === slides.length - 1 ? '' : ','}\n`;
+      });
+      
+      lua += `}\n\n`;
+      
+      lua += `local current_slide = 1
+local buf = nil
+local win = nil
+
+local function draw_slide()
+  if not buf or not api.nvim_buf_is_valid(buf) then return end
+  api.nvim_buf_set_option(buf, "modifiable", true)
+  api.nvim_buf_set_lines(buf, 0, -1, false, slides[current_slide])
+  api.nvim_buf_set_option(buf, "modifiable", false)
+end
+
+function _G.presenter_next()
+  if current_slide < #slides then
+    current_slide = current_slide + 1
+    draw_slide()
+  end
+end
+
+function _G.presenter_prev()
+  if current_slide > 1 then
+    current_slide = current_slide - 1
+    draw_slide()
+  end
+end
+
+function _G.start_presentation()
+  buf = api.nvim_create_buf(false, true)
+  win = api.nvim_get_current_win()
+  api.nvim_win_set_buf(win, buf)
+  
+  api.nvim_buf_set_keymap(buf, "n", "n", ":lua _G.presenter_next()<CR>", {noremap = true, silent = true})
+  api.nvim_buf_set_keymap(buf, "n", "p", ":lua _G.presenter_prev()<CR>", {noremap = true, silent = true})
+  api.nvim_buf_set_keymap(buf, "n", "q", ":bd!<CR>", {noremap = true, silent = true})
+  
+  vim.opt_local.guicursor = "a:ver1-blinkon0"
+  
+  current_slide = 1
+  draw_slide()
+  print("Presentation Started. (n: Next, p: Prev, q: Quit)")
+end
+
+vim.api.nvim_create_user_command("PresentStart", _G.start_presentation, {})
+`;
+      return lua;
+    }
+
+    function updateOutput() {
+      document.getElementById('code-output').textContent = generateLua();
+    }
+
+    function downloadLua() {
+      const blob = new Blob([generateLua()], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "presentation.lua";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    selectSlide(0);
+  </script>
+</body>
+</html>
